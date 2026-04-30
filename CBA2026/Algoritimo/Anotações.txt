@@ -1,0 +1,114 @@
+================================================================================
+SUMÁRIO DAS DECISÕES E CORREÇÕES
+================================================================================
+
+1. PROBLEMA FUNDAMENTAL IDENTIFICADO
+--------------------------------------------------------------------------------
+Você está simulando um banco de baterias grande (9000 kWh) usando um modelo ML 
+treinado com células pequenas (2 Ahr do dataset NASA). O desafio é escalonar 
+corretamente os valores de tensão e corrente entre as duas escalas.
+
+
+2. DECISÃO: TRABALHAR POR FASE
+--------------------------------------------------------------------------------
+- Decidimos trabalhar com valores por fase porque o modelo ML representa uma 
+  célula única
+- O banco trifásico de 9000 kWh tem 3000 kWh por fase (9000/3)
+- A tensão fase-neutro é obtida diretamente do OpenDSS via kVBase (14.38 kV)
+- A corrente medida no elemento Storage.bess844 já é a corrente por fase
+
+
+3. DECISÃO: USAR TAXA C PARA ESCALONAMENTO
+--------------------------------------------------------------------------------
+- A degradação depende da taxa C (corrente relativa à capacidade), não da 
+  corrente absoluta
+- C_rate = I_medida / I_1C_real (onde I_1C_real é a corrente que descarrega 
+  em 1 hora)
+- A mesma taxa C é aplicada ao modelo: I_modelo = C_rate x I_1C_nasa
+
+
+4. DECISÃO: VALORES BASE CALCULADOS UMA VEZ
+--------------------------------------------------------------------------------
+- IC_OPDSS = corrente de 1C do seu banco (calculada uma vez com valores nominais)
+- IC_ML = capacidade do modelo NASA / V_base (valor intermediário para fator de 
+  escala)
+- Taxa_C = IC_ML / IC_OPDSS (fator fixo para escalar corrente)
+
+
+5. DECISÃO: TENSÃO BASE
+--------------------------------------------------------------------------------
+- A tensão base do OpenDSS (kVBase) retorna tensão fase-neutro (14.38 kV)
+- Para o modelo NASA, usamos V = V_pu x V_base_nasa onde V_base_nasa é 4.2V
+
+
+6. ESTRUTURA FINAL DO CÓDIGO
+--------------------------------------------------------------------------------
+def Battery_simulation(model, V_base_nasa, I_base_nasa):
+    # Setup - calcula fatores de escala uma vez
+    capacity_nominal_kWh = 9000  # do OpenDSS
+    V_fase_neutro_kV = dss_engine.ActiveCircuit.ActiveBus.kVBase  # 14.38 kV
+    
+    # Corrente de 1C real (por fase)
+    I_1C_real = (capacity_nominal_kWh/3 * 1000) / (V_fase_neutro_kV * 1000)
+    
+    # Corrente de 1C do modelo NASA
+    capacity_nasa_Ahr = model.predict([[V_base_nasa, I_base_nasa]])[0]
+    I_1C_nasa = capacity_nasa_Ahr
+    
+    # Fator de escala fixo
+    Taxa_C = I_1C_nasa / I_1C_real
+    
+    # Loop de simulação
+    for D in range(Dias):
+        # Medições
+        I_medida = corrente_por_fase  # do Storage
+        V_pu = tensao_em_pu  # da barra
+        
+        # Escala para o modelo
+        I_escalada = I_medida * Taxa_C
+        V_escalada = V_pu * V_base_nasa
+        
+        # Predição do modelo
+        capacity_model_Ahr = model.predict([[V_escalada, I_escalada]])
+        
+        # Atualiza capacidade real via SoH
+        if primeira_iteracao:
+            capacity_inicial_modelo_Ahr = capacity_model_Ahr
+        
+        SoH = capacity_model_Ahr / capacity_inicial_modelo_Ahr
+        capacity_atual_kWh = SoH * capacity_nominal_kWh
+
+
+7. PONTOS DE ATENÇÃO MANTIDOS
+--------------------------------------------------------------------------------
+- I_base_OPDSS: Você mantém no código mas não usa mais para o cálculo principal
+- I_base_OPDSS poderia ser removido, pois Taxa_C já é o fator fixo
+- O fator de escala é constante durante toda a simulação (não recalcula a cada 
+  iteração)
+- Tensão nominal do banco = 24.9 kV (fase-fase) ou 14.38 kV (fase-neutro)
+
+
+8. VALORES NUMÉRICOS RESULTANTES
+--------------------------------------------------------------------------------
+- I_1C_real (por fase): ~208 A
+- I_1C_nasa: ~2 A
+- Taxa_C: ~0.0096 (2/208)
+- Se I_medida = 104 A -> I_escalada = 1 A (0.5C)
+
+
+9. PRÓXIMOS PASSOS
+--------------------------------------------------------------------------------
+1. Testar se os valores de IC_OPDSS e IC_ML estão fisicamente coerentes
+2. Verificar se I_base_OPDSS ainda é necessário ou pode ser removido
+3. Validar se o fator fixo Taxa_C é suficiente ou se precisa ser recalculado 
+   com a degradação
+4. Ajustar nomes de variáveis para maior clareza (I_escalada, V_escalada)
+
+
+10. DECISÃO PENDENTE
+--------------------------------------------------------------------------------
+Recalcular Taxa_C ou não? Atualmente é fixo. A degradação reduz a capacidade, 
+então I_1C_real diminui com o tempo. Para maior precisão, deveria ser recalculado 
+a cada iteração usando capacity_atual_kWh.
+
+================================================================================
