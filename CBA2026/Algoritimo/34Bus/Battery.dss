@@ -1,0 +1,3 @@
+New Storage.BESS844 Bus1=844 Phases=3 kV=24.9 kWRated=3000 kWhRated=6000 %stored=50
+
+New StorageController.SC1 element=Storage.BESS844 mode=PeakShave kWTarget=3000

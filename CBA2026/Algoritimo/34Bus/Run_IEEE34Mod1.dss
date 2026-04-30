@@ -1,0 +1,73 @@
+!------------------------------------------------------------------------------------
+! This script runs the IEEE 34 Bus test case (Mod 1)
+!------------------------------------------------------------------------------------
+
+! change the path name to match where it is actually installed on your computer
+
+Compile ieee34Mod1.dss
+
+!
+
+New Energymeter.M1  Line.L1  1
+
+Makebuslist
+Buscoords IEEE34_BusXY.csv
+
+!Show voltage LN Nodes
+!Show currents element
+!show powers kva element
+!show taps
+
+
+Set MarkTransformers=yes
+Interpolate    ! requires an energyMeter
+plot circuit Power max=2000 y y C1=$00FF0000
+
+!Plot profile phases=all
+
+!-----------------------------------------------------------------------------
+!--------2nd Run Script for 34-bus Test Case---------------------------------
+!-----------------------------------------------------------------------------
+
+! This script forces the regulator taps to the same values reported in the 
+! published results
+
+Compile ieee34Mod1.dss
+
+! Force Regulator Transformer taps
+Transformer.reg1a.wdg=2 Tap=(0.00625  12  * 1 +)   ! Tap 12
+Transformer.reg1b.wdg=2 Tap=(0.00625   5 * 1 +)    ! Tap 5
+Transformer.reg1c.wdg=2 Tap=(0.00625   5  * 1 +)   ! Tap 5
+Transformer.reg2a.wdg=2 Tap=(0.00625  13 * 1 +)    ! Tap 13
+Transformer.reg2b.wdg=2 Tap=(0.00625  11 * 1 +)    ! Tap 11
+Transformer.reg2c.wdg=2 Tap=(0.00625  12 * 1 +)    ! Tap 12
+
+Set Controlmode=OFF  ! prevents further tap changes
+
+!Monitora a bateria e a linha
+new monitor.C1 element=Line.L21 mode=1 ppolar=no
+new monitor.Storage element=Storage.BESS844 mode=3
+new monitor.MainBus element=Line.L1 mode=1 ppolar=no
+
+set mode=daily
+set maxcontroliter=1000
+
+!Solve 24h
+!set number=255
+!solve
+
+!show bus
+!show voltages LN Nodes
+!show currents residual=y elements
+!show powers kva element
+!show taps
+
+!Export monitors C1
+!Plot monitor object= C1 channels=(1 3 5 )
+
+!Export monitors storage
+!Plot monitor object= storage channels=(2 )
+!Export monitors storage
+!Plot monitor object= storage channels=(1 )
+
+New Energymeter.M1  Line.L1  1
